@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 import json
 from collections import deque
 from dataclasses import dataclass
 from typing import Any, Deque, Dict, Optional, Union
+
+from dotenv import load_dotenv
 
 
 @dataclass
@@ -49,17 +52,17 @@ class TransformersLLMClient(LLMClient):
     """LLM client powered by `transformers` pipelines for chat-style models."""
 
     def __init__(
-        self,
-        model_path: str,
-        *,
-        max_new_tokens: int = 512,
-        temperature: float = 0.0,
-        top_p: float = 0.9,
-        device_map: Union[str, Dict[str, int]] = "auto",
-        torch_dtype: Union[str, "torch.dtype"] = "auto",
-        trust_remote_code: bool = True,
-        system_prompt: Optional[str] = None,
-        generation_kwargs: Optional[Dict[str, Any]] = None,
+            self,
+            model_path: str,
+            *,
+            max_new_tokens: int = 512,
+            temperature: float = 0.0,
+            top_p: float = 0.9,
+            device_map: Union[str, Dict[str, int]] = "auto",
+            torch_dtype: Union[str, "torch.dtype"] = "auto",
+            trust_remote_code: bool = True,
+            system_prompt: Optional[str] = None,
+            generation_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
         super().__init__(model=model_path)
 
@@ -151,14 +154,14 @@ class TransformersLLMClient(LLMClient):
             trimmed = trimmed.split(marker, 1)[1].strip()
 
         if trimmed.startswith(marker):
-            trimmed = trimmed[len(marker) :].strip()
+            trimmed = trimmed[len(marker):].strip()
 
         # Attempt to extract the first JSON object substring.
         if trimmed and trimmed[0] != "{":
             start = trimmed.find("{")
             end = trimmed.rfind("}")
             if start != -1 and end != -1 and end > start:
-                candidate = trimmed[start : end + 1].strip()
+                candidate = trimmed[start: end + 1].strip()
                 candidate_clean = candidate.replace("\r", " ").replace("\n", " ")
                 try:
                     json.loads(candidate_clean)
@@ -167,3 +170,42 @@ class TransformersLLMClient(LLMClient):
                     pass
 
         return trimmed.replace("\r", " ").replace("\n", " ")
+
+# deepseek兼容openai接口client
+class DeepseekLLMClient(LLMClient):
+    def __init__(self,
+                 model: str = "deepseek-chat",
+                 api_key: Optional[str] = None,
+                 base_url="https://api.deepseek.com",
+                 system_prompt: str = None,
+                 ) -> None:
+        super().__init__(model=model)
+        try:
+            from openai import OpenAI
+        except ImportError as e:
+            raise ImportError(
+                "请先安装OpenAI库:\n"
+                "  pip install openai\n"
+                "或:\n"
+                "  pip install openai>=1.0.0"
+            ) from e
+        load_dotenv()
+        self._system_prompt = system_prompt or (
+            "You are a JSON-only assistant that MUST reply with a single valid JSON object without extra text.\n"
+            "Reasoning: low\n"
+            "Do not expose analysis or chain-of-thought. Respond using the final JSON only."
+        )
+        if not api_key:
+            api_key = os.getenv("DEEPSEEK_API_KEY")
+        self.client = OpenAI(base_url=base_url, api_key=api_key)
+
+    def complete(self, prompt: str, **kwargs: Any) -> LLMResponse:
+        response = self.client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": self._system_prompt},
+                {"role": "user", "content": prompt},
+            ],
+            stream=False
+        )
+        return LLMResponse(text=response.choices[0].message.content)
