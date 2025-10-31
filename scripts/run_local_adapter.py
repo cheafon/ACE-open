@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List
 
+from ace.llm import DeepseekLLMClient
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -24,7 +26,7 @@ from ace import (
     Reflector,
     Sample,
     TaskEnvironment,
-    TransformersLLMClient,
+    TransformersLLMClient, DummyLLMClient,
 )
 
 
@@ -82,18 +84,19 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    args = parse_args()
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_visible_devices
+    # args = parse_args()
+    # os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_visible_devices
 
-    print(f"Loading model from {args.model_path} on GPUs {args.cuda_visible_devices}...")
-    client = TransformersLLMClient(
-        args.model_path,
-        max_new_tokens=args.max_new_tokens,
-        temperature=args.temperature,
-        torch_dtype="bfloat16",
-        device_map="auto",
-    )
-
+    # print(f"Loading model from {args.model_path} on GPUs {args.cuda_visible_devices}...")
+    # client = TransformersLLMClient(
+    #     args.model_path,
+    #     max_new_tokens=args.max_new_tokens,
+    #     temperature=args.temperature,
+    #     torch_dtype="bfloat16",
+    #     device_map="auto",
+    # )
+    # client = DummyLLMClient()
+    client = DeepseekLLMClient()
     generator = Generator(client)
     reflector = Reflector(client)
     curator = Curator(client)

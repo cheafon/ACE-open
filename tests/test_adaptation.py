@@ -94,6 +94,5 @@ class OfflineAdapterTest(unittest.TestCase):
             any("life" in bullet.content for bullet in playbook.bullets())
         )
 
-
 if __name__ == "__main__":
     unittest.main()

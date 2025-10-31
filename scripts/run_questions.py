@@ -14,10 +14,12 @@ from pathlib import Path
 from statistics import mean
 from typing import Dict, Iterable, List
 
+from ace.llm import DeepseekLLMClient
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
+print(sys.path)
 from ace import (  # noqa: E402
     AdapterStepResult,
     Curator,
@@ -229,14 +231,14 @@ def main() -> None:
     print(
         f"Loading model from {args.model_path} on GPUs {args.cuda_visible_devices}..."
     )
-    client = TransformersLLMClient(
-        args.model_path,
-        max_new_tokens=args.max_new_tokens,
-        temperature=args.temperature,
-        torch_dtype="bfloat16",
-        device_map="auto",
-    )
-
+    # client = TransformersLLMClient(
+    #     args.model_path,
+    #     max_new_tokens=args.max_new_tokens,
+    #     temperature=args.temperature,
+    #     torch_dtype="bfloat16",
+    #     device_map="auto",
+    # )
+    client = DeepseekLLMClient()
     generator = Generator(client)
     reflector = Reflector(client)
     curator = Curator(client)
@@ -253,10 +255,10 @@ def main() -> None:
     )
 
     print("Starting offline adaptation...")
-    results = adapter.run(samples, environment, epochs=args.epochs)
+    results = adapter.run(samples, environment, epochs=5)
 
     report_markdown = build_report(args, results, adapter.playbook)
-    output_path = Path(args.output)
+    output_path = ROOT / "reports" / "questions_report_5_epoch.md"
     ensure_parent(output_path)
     output_path.write_text(report_markdown, encoding="utf-8")
     print(f"Report written to {output_path}")

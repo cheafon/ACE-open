@@ -6,13 +6,20 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 from statistics import mean
 from typing import List
 
-from transformers import AutoTokenizer, pipeline  # type: ignore[import-untyped]
+# Add parent directory to path to import ace module
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+print(sys.path)
+
+from ace.llm import DeepseekLLMClient  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -24,12 +31,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--questions",
-        default="questions.json",
+        default=str(ROOT / "questions.json"),
         help="Path to the questions JSON file.",
     )
     parser.add_argument(
         "--output",
-        default="reports/questions_report.md",
+        default="reports/questions_report_directly.md",
         help="Path to write the markdown report.",
     )
     parser.add_argument(
@@ -71,29 +78,19 @@ def truncate(text: str, limit: int = 120) -> str:
 
 def main() -> None:
     args = parse_args()
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda_visible_devices
 
     questions_path = Path(args.questions)
     data = load_questions(questions_path)
     print(f"Loaded {len(data)} questions from {questions_path}.")
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.model_path, trust_remote_code=True
-    )
-    text_pipe = pipeline(
-        "text-generation",
-        model=args.model_path,
-        tokenizer=tokenizer,
-        device_map="auto",
-        trust_remote_code=True,
-        torch_dtype="bfloat16",
-        return_full_text=False,
+    # 初始化 Deepseek LLM 客户端
+    print("Initializing Deepseek LLM client...")
+    client = DeepseekLLMClient(
+        system_prompt="你是一名资深火灾调查鉴定专家，回答要详尽、条理清晰、可执行。"
     )
 
     prompt_template = (
-        "你是一名资深火灾调查鉴定专家，回答要详尽、条理清晰、可执行。\n"
-        "Reasoning: low\n\n"
-        "问题：{question}\n"
+        "问题：{question}\n\n"
         "请给出分步骤、可操作的专业答复。"
     )
 
@@ -101,17 +98,14 @@ def main() -> None:
     for idx, item in enumerate(data, start=1):
         question = item["question"]
         reference = item["answer"]
-        messages = [
-            {
-                "role": "system",
-                "content": "你是专业火灾调查顾问，回答必须准确且结构化。",
-            },
-            {"role": "user", "content": prompt_template.format(question=question)},
-        ]
+
+        prompt = prompt_template.format(question=question)
         print(f"[{idx:02d}/{len(data)}] Generating answer...")
-        outputs = text_pipe(messages, max_new_tokens=args.max_new_tokens)
-        raw_text = outputs[0]["generated_text"]
-        final_answer = extract_answer(raw_text)
+
+        # 使用 Deepseek API 生成答案
+        response = client.complete(prompt)
+        final_answer = response.text.strip()
+
         score = similarity(final_answer, reference)
         results.append(
             {
@@ -130,12 +124,10 @@ def main() -> None:
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
     lines = []
-    lines.append("# Questions Test Report (Direct Mode)")
+    lines.append("# Questions Test Report (Direct Mode - Deepseek)")
     lines.append("")
     lines.append(f"- Generated: {timestamp}")
-    lines.append(f"- Model: `{args.model_path}`")
-    lines.append(f"- CUDA devices: `{args.cuda_visible_devices}`")
-    lines.append(f"- Max new tokens: {args.max_new_tokens}")
+    lines.append(f"- Model: `deepseek-chat` (via API)")
     lines.append(f"- Samples: {len(results)}")
     lines.append(
         f"- Similarity (avg/min/max): {avg_score:.2%} / {min_score:.2%} / {max_score:.2%}"
